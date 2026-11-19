@@ -1,0 +1,57 @@
+name: Regenerate index
+
+# Keeps index/languages.json and index/<lang>.json in sync with src/ so that
+# client apps (joshuamumbere/sabbath_school_lessons) can serve all metadata
+# from these committed files without ever calling the GitHub Contents API.
+on:
+  push:
+    branches: [stage]
+    paths:
+      - 'src/**'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *' # daily safety net in case a trigger was missed
+
+permissions:
+  contents: write
+
+concurrency:
+  group: regenerate-index
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout content repository
+        uses: actions/checkout@v4
+
+      - name: Checkout generator (sabbath_school_lessons package)
+        uses: actions/checkout@v4
+        with:
+          repository: joshuamumbere/sabbath_school_lessons
+          ref: main
+          path: generator
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+
+      - name: Install generator dependencies
+        working-directory: generator
+        run: dart pub get
+
+      - name: Generate index
+        working-directory: generator
+        run: dart run tool/generate_index.dart --repo ..
+
+      - name: Commit and push updated index
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index
+          if git diff --cached --quiet; then
+            echo "Index unchanged — nothing to commit."
+          else
+            git commit -m "Regenerate index (automated) [skip ci]"
+            git push
+          fi
